@@ -1,0 +1,16 @@
+export const ERR_MSG = {
+  NOT_FOUND_USER: '[1] 유저를 찾을 수 없습니다.',
+  NOT_FOUND_REVIEW: '[2] 리뷰를 찾을 수 없습니다.',
+  NOT_FOUND_PLACE: '[3] 등록되지 않은 장소입니다.',
+  ALREADY_WRITE_REVIEW: '[101] 이미 작성하셨습니다.',
+  ALREADY_DELETED_REVIEW: '[102] 삭제된 리뷰입니다.',
+  ALREADY_EXIST_ATTACH_PHOTO_ID: '[104] 중복된 사진 정보입니다.',
+  ALREADY_DELETED_ATTACH_PHOTO_ID: '[105] 삭제된 사진 정보가 포함되어있습니다.',
+  ALREADY_CREATED_REVIEW_POINT_DTL: '[106] 이미 포인트가 적립된 리뷰입니다.',
+  WRONG_USER_ID: '[201] 유저 정보가 잘못됐습니다.',
+  WRONG_PLACE_ID: '[202] 장소 정보가 잘못됐습니다.',
+  WRONG_POINT_NEGATIVE: '[203] 포인트 정보가 잘못됐습니다.',
+  FAIL_ADD_REVIEW: '[301] 리뷰 등록을 실패했습니다.',
+  FAIL_MOD_REVIEW: '[302] 리뷰 수정을 실패했습니다.',
+  FAIL_DELETE_REVIEW: '[302] 리뷰 삭제를 실패했습니다.',
+};
