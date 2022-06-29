@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ERR_MSG } from 'src/common/errorMsg';
+import { ERR_MSG } from '../common/error-msg';
 import { Repository } from 'typeorm';
 import { ReviewPointResDto } from './dto/point.dto';
 import { ReviewPointMstEntity } from './entities/review.point-mst.entity';
@@ -21,7 +21,7 @@ export class ReviewPointService {
         totalPointAmt: reviewPointMst.totalPointAmt,
       };
     } catch (err) {
-      console.log(err);
+      console.log(err.stack);
       throw new BadRequestException(ERR_MSG.NOT_FOUND_USER);
     }
   }

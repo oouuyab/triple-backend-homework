@@ -1,9 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { ReviewReqDto } from './dto/review.dto';
-import { ERR_MSG } from 'src/common/errorMsg';
-import { ReviewPointDtlInterface } from 'src/review/interface/review-point-dtl.interface';
-import { PointType } from 'src/common/enum';
+import { ERR_MSG } from '../common/error-msg';
+import { ReviewPointDtlInterface } from '../review/interface/review-point-dtl.interface';
+import { PointType } from '../common/enum';
 import { ReviewEntity } from './entities/review.entity';
 import { AttachPhotoEntity } from './entities/attach-photo.entity';
 import { ReviewPointDtlEntity } from './entities/review-point-dtl.entity';
@@ -11,6 +11,10 @@ import { UserEntity } from './entities/user.entity';
 import { PlaceEntity } from './entities/place.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ReviewPointMstEntity } from './entities/review-point-mst.entity';
+import { ReviewInterface } from './interface/review.interface';
+import { AttachPhotoInterface } from './interface/attach-photo.interface';
+import { ReviewPointMstInterface } from './interface/review-point-mst.interface';
+import { UserInterface } from './interface/user.interface';
 
 @Injectable()
 export class ReviewService {
@@ -20,6 +24,8 @@ export class ReviewService {
     private reviewEntity: Repository<ReviewEntity>,
     @InjectRepository(AttachPhotoEntity)
     private attachPhotoEntity: Repository<AttachPhotoEntity>,
+    @InjectRepository(ReviewPointMstEntity)
+    private reviewPointMstEntity: Repository<ReviewPointMstEntity>,
     @InjectRepository(ReviewPointDtlEntity)
     private reviewPointDtlEntity: Repository<ReviewPointDtlEntity>,
     @InjectRepository(UserEntity)
@@ -39,8 +45,8 @@ export class ReviewService {
   }
 
   private async addReview(review: ReviewReqDto): Promise<void> {
-    await this.checkReviewValidation(review);
     await this.dataSource.transaction(async (manager) => {
+      await this.checkReviewValidation(review, manager);
       try {
         const newReviewPointDtl: Pick<
           ReviewPointDtlInterface,
@@ -48,44 +54,34 @@ export class ReviewService {
         >[] = [];
 
         // * 리뷰 생성
-        await manager
-          .createQueryBuilder()
-          .insert()
-          .into(ReviewEntity)
-          .values({
+        await this.createReview(
+          {
             reviewId: review.reviewId,
             userId: review.userId,
             placeId: review.placeId,
             content: review.content,
-          })
-          .execute();
+          },
+          manager,
+        );
 
         // * 사진 첨부
         const attachPhotoList = review.attachedPhotoIds.map((attachPhotoId) => {
           return {
             attachPhotoId: attachPhotoId,
             reviewId: review.reviewId,
-            isDel: false,
           };
         });
 
-        await manager
-          .createQueryBuilder()
-          .insert()
-          .into(AttachPhotoEntity)
-          .values(attachPhotoList)
-          .execute();
+        await this.createAttachPhoto(attachPhotoList, manager);
 
         // * 리뷰 표인트 조회 및 생성
-        let reviewPointMst = await manager.findOne(ReviewPointMstEntity, {
-          where: { userId: review.userId },
-        });
+        let reviewPointMst = await this.getReviewPointMstByUserId(
+          { userId: review.userId },
+          manager,
+        );
 
         if (!reviewPointMst) {
-          const reviewPointMstInfo = new ReviewPointMstEntity();
-          reviewPointMstInfo.userId = review.userId;
-
-          reviewPointMst = await manager.save(reviewPointMstInfo);
+          reviewPointMst = await this.createReviewPointMst({ userId: review.userId }, manager);
         }
 
         if (review.content.length > 0) {
@@ -106,12 +102,10 @@ export class ReviewService {
           });
         }
 
-        const placeReviewCnt = await manager
-          .createQueryBuilder(ReviewEntity, 'review')
-          .where('review.placeId = :placeId', { placeId: review.placeId })
-          .andWhere('review.isDel = :isDel', { isDel: false })
-          .andWhere('review.reviewId != :reviewId', { reviewId: review.reviewId })
-          .getCount();
+        const placeReviewCnt = await this.getPlaceReviewCntExcludeSelfByPlaceId(
+          { placeId: review.placeId, isDel: false, reviewId: review.reviewId },
+          manager,
+        );
 
         if (placeReviewCnt === 0) {
           newReviewPointDtl.push({
@@ -123,54 +117,43 @@ export class ReviewService {
         }
 
         // * 포인트 처리
-        await manager
-          .createQueryBuilder()
-          .insert()
-          .into(ReviewPointDtlEntity)
-          .values(newReviewPointDtl)
-          .execute();
+        await this.createReviewPointDtl(newReviewPointDtl, manager);
 
         // * 포인트 조회
-        const reviewPointData = await manager
-          .createQueryBuilder(ReviewPointDtlEntity, 'reviewPointDtl')
-          .select('SUM(reviewPointDtl.pointAmt)', 'totalPointAmt')
-          .where('reviewPointDtl.reviewPointMstId = :reviewPointMstId', {
-            reviewPointMstId: reviewPointMst.reviewPointMstId,
-          })
-          .getRawOne();
+        const reviewPointSum = await this.getReviewPointSum(
+          { reviewPointMstId: reviewPointMst.reviewPointMstId },
+          manager,
+        );
 
         // * 포인트 업데이트
-        await manager
-          .createQueryBuilder()
-          .update(ReviewPointMstEntity)
-          .set({
-            totalPointAmt: reviewPointData.totalPointAmt,
-          })
-          .where('userId = :userId', { userId: review.userId })
-          .execute();
+        await this.updateTotalPointAmt(
+          { userId: review.userId, totalPointAmt: reviewPointSum },
+          manager,
+        );
       } catch (err) {
+        console.log(err.stack);
         throw new BadRequestException(ERR_MSG.FAIL_ADD_REVIEW);
       }
     });
   }
   private async modReview(review: ReviewReqDto): Promise<void> {
-    await this.checkReviewValidation(review);
-
     await this.dataSource.transaction(async (manager) => {
+      await this.checkReviewValidation(review, manager);
       try {
         const newReviewPointDtl: Pick<
           ReviewPointDtlInterface,
           'reviewPointMstId' | 'reviewId' | 'pointType' | 'pointAmt'
         >[] = [];
 
-        const beforeReview = await manager.findOne(ReviewEntity, {
-          where: { reviewId: review.reviewId },
-          relations: ['attachPhotoList'],
-        });
+        const beforeReview = await this.getReviewWithAttachPhotoListByReviewId(
+          { reviewId: review.reviewId },
+          manager,
+        );
 
-        const reviewPointMst = await manager.findOne(ReviewPointMstEntity, {
-          where: { userId: review.userId },
-        });
+        const reviewPointMst = await this.getReviewPointMstByUserId(
+          { userId: review.userId },
+          manager,
+        );
 
         if (beforeReview.content !== review.content) {
           if (beforeReview.content.length === 0 && review.content.length > 0) {
@@ -213,31 +196,23 @@ export class ReviewService {
           });
         }
 
-        await manager
-          .createQueryBuilder()
-          .update(ReviewEntity)
-          .set({ content: review.content })
-          .where('reviewId = :reviewId', { reviewId: review.reviewId })
-          .execute();
+        await this.updateReviewContent(
+          { reviewId: review.reviewId, content: review.content },
+          manager,
+        );
 
         // * attachPhoto 삭제
         const beforeAttachPhotoIds = beforeReview.attachPhotoList.map(
           (attachPhotoInfo) => attachPhotoInfo.attachPhotoId,
         );
-        const deletedAttachPhotoIds = beforeAttachPhotoIds.filter(
-          (id) => !review.attachedPhotoIds.includes(id),
-        );
+        const deletedAttachPhotoIds = beforeAttachPhotoIds
+          .filter((id) => !review.attachedPhotoIds.includes(id))
+          .map((attachPhotoId) => {
+            return { attachPhotoId };
+          });
+
         if (deletedAttachPhotoIds.length > 0) {
-          await manager
-            .createQueryBuilder()
-            .update(AttachPhotoEntity)
-            .set({
-              isDel: true,
-            })
-            .where('attachPhotoId IN (:attachPhotoIdList)', {
-              attachPhotoIdList: deletedAttachPhotoIds,
-            })
-            .execute();
+          await this.upDeleteAttachPhoto(deletedAttachPhotoIds, manager);
         }
 
         // * attachPhoto 추가
@@ -249,45 +224,25 @@ export class ReviewService {
               reviewId: review.reviewId,
             };
           });
+
         if (newAttachPhotoList.length > 0) {
-          await manager
-            .createQueryBuilder()
-            .insert()
-            .into(AttachPhotoEntity)
-            .values(newAttachPhotoList)
-            .execute();
+          await this.createAttachPhoto(newAttachPhotoList, manager);
         }
 
-        // * 포인트 디테일 업데이트
-        await manager
-          .createQueryBuilder()
-          .insert()
-          .into(ReviewPointDtlEntity)
-          .values(newReviewPointDtl)
-          .execute();
+        // * 포인트 처리
+        await this.createReviewPointDtl(newReviewPointDtl, manager);
 
-        // * 포인트 마스터 업데이트
-        const reviewPointData = await manager
-          .createQueryBuilder(ReviewPointDtlEntity, 'reviewPointDtl')
-          .select('SUM(reviewPointDtl.pointAmt)', 'totalPointAmt')
-          .where('reviewPointDtl.reviewPointMstId = :reviewPointMstId', {
-            reviewPointMstId: reviewPointMst.reviewPointMstId,
-          })
-          .getRawOne();
-
-        if (reviewPointData.totalPointAmt < 0) {
-          throw new BadRequestException(ERR_MSG.WRONG_POINT_NEGATIVE);
-        }
+        // * 포인트 조회
+        const reviewPointSum = await this.getReviewPointSum(
+          { reviewPointMstId: reviewPointMst.reviewPointMstId },
+          manager,
+        );
 
         // * 포인트 업데이트
-        await manager
-          .createQueryBuilder()
-          .update(ReviewPointMstEntity)
-          .set({
-            totalPointAmt: reviewPointData.totalPointAmt,
-          })
-          .where('userId = :userId', { userId: review.userId })
-          .execute();
+        await this.updateTotalPointAmt(
+          { userId: review.userId, totalPointAmt: reviewPointSum },
+          manager,
+        );
       } catch (err) {
         console.log(err.stack);
         throw new BadRequestException(ERR_MSG.FAIL_MOD_REVIEW);
@@ -296,23 +251,23 @@ export class ReviewService {
   }
 
   private async deleteReview(review: ReviewReqDto): Promise<void> {
-    await this.checkReviewValidation(review);
-
     await this.dataSource.transaction(async (manager) => {
+      await this.checkReviewValidation(review, manager);
       try {
         const newReviewPointDtl: Pick<
           ReviewPointDtlInterface,
           'reviewPointMstId' | 'reviewId' | 'pointType' | 'pointAmt'
         >[] = [];
 
-        const beforeReview = await manager.findOne(ReviewEntity, {
-          where: { reviewId: review.reviewId },
-          relations: ['attachPhotoList', 'reviewPointDtlList'],
-        });
+        const beforeReview = await this.getReviewWithAttachPhotoListAndReviewPointDtlListByReviewId(
+          { reviewId: review.reviewId },
+          manager,
+        );
 
-        const reviewPointMst = await manager.findOne(ReviewPointMstEntity, {
-          where: { userId: review.userId },
-        });
+        const reviewPointMst = await this.getReviewPointMstByUserId(
+          { userId: review.userId },
+          manager,
+        );
 
         if (beforeReview.content.length > 0) {
           newReviewPointDtl.push({
@@ -325,7 +280,9 @@ export class ReviewService {
 
         const normalAttachPhotoIdList = beforeReview.attachPhotoList
           .filter((attachPhoto) => attachPhoto.isDel === false)
-          .map((attachPhoto) => attachPhoto.attachPhotoId);
+          .map((attachPhoto) => {
+            return { attachPhotoId: attachPhoto.attachPhotoId };
+          });
         if (normalAttachPhotoIdList.length > 0) {
           newReviewPointDtl.push({
             reviewPointMstId: reviewPointMst.reviewPointMstId,
@@ -352,93 +309,78 @@ export class ReviewService {
           });
         }
 
-        await manager
-          .createQueryBuilder()
-          .update(ReviewEntity)
-          .set({ isDel: true })
-          .where('reviewId = :reviewId', { reviewId: review.reviewId })
-          .execute();
+        await this.upDeleteReview({ reviewId: review.reviewId }, manager);
 
         if (normalAttachPhotoIdList.length > 0) {
-          await manager
-            .createQueryBuilder()
-            .update(AttachPhotoEntity)
-            .set({ isDel: true })
-            .where('attachPhotoId IN (:attachPhotoId)', { attachPhotoId: normalAttachPhotoIdList })
-            .execute();
+          await this.upDeleteAttachPhoto(normalAttachPhotoIdList, manager);
         }
 
-        // * 포인트 디테일 업데이트
-        await manager
-          .createQueryBuilder()
-          .insert()
-          .into(ReviewPointDtlEntity)
-          .values(newReviewPointDtl)
-          .execute();
+        // * 포인트 처리
+        await this.createReviewPointDtl(newReviewPointDtl, manager);
 
-        // * 포인트 마스터 업데이트
-        const reviewPointData = await manager
-          .createQueryBuilder(ReviewPointDtlEntity, 'reviewPointDtl')
-          .select('SUM(reviewPointDtl.pointAmt)', 'totalPointAmt')
-          .where('reviewPointDtl.reviewPointMstId = :reviewPointMstId', {
-            reviewPointMstId: reviewPointMst.reviewPointMstId,
-          })
-          .getRawOne();
+        // * 포인트 조회
+        const reviewPointSum = await this.getReviewPointSum(
+          { reviewPointMstId: reviewPointMst.reviewPointMstId },
+          manager,
+        );
 
         // * 포인트 업데이트
-        await manager
-          .createQueryBuilder()
-          .update(ReviewPointMstEntity)
-          .set({
-            totalPointAmt: reviewPointData.totalPointAmt,
-          })
-          .where('userId = :userId', { userId: review.userId })
-          .execute();
+        await this.updateTotalPointAmt(
+          { userId: review.userId, totalPointAmt: reviewPointSum },
+          manager,
+        );
       } catch (err) {
+        console.log(err.stack);
         throw new BadRequestException(ERR_MSG.FAIL_DELETE_REVIEW);
       }
     });
   }
 
-  private async checkReviewValidation(review: ReviewReqDto): Promise<void> {
+  private async checkReviewValidation(review: ReviewReqDto, manager: EntityManager): Promise<void> {
     // * 유저가 존재하는지 체크
-    const userInfo = await this.userEntity.findOne({ where: { userId: review.userId } });
+    const userInfo = await this.getUserByUserId({ userId: review.userId }, manager);
     if (!userInfo) {
       throw new BadRequestException(ERR_MSG.NOT_FOUND_USER);
     }
     if (review.action === 'ADD') {
       // * 이미 작성한 리뷰가 있는지 체크
-      const reviewInfo = await this.reviewEntity.findOne({
-        where: { userId: review.userId, placeId: review.placeId, isDel: false },
-      });
+      const reviewInfo = await this.getReviewByUserIdAndPlaceId(
+        { userId: review.userId, placeId: review.placeId, isDel: false },
+        manager,
+      );
       if (reviewInfo) {
         throw new BadRequestException(ERR_MSG.ALREADY_WRITE_REVIEW);
       }
 
       // * 장소가 존재하는지 체크
-      const placeInfo = await this.placeEntity.findOne({ where: { placeId: review.placeId } });
+      const placeInfo = await this.getPlaceByPlaceId({ placeId: review.placeId }, manager);
       if (!placeInfo) {
         throw new BadRequestException(ERR_MSG.NOT_FOUND_PLACE);
       }
 
       // * 사진 id가 중복되는지 체크
-      const attachPhotoList = await this.attachPhotoEntity.find({
-        where: { attachPhotoId: In(review.attachedPhotoIds) },
+      const attachPhotoData = review.attachedPhotoIds.map((attachPhotoId) => {
+        return { attachPhotoId };
       });
+      const attachPhotoList = await this.getAttachPhotoListByAttachPhotoIdList(
+        attachPhotoData,
+        manager,
+      );
       if (attachPhotoList.length > 0) {
         throw new BadRequestException(ERR_MSG.ALREADY_EXIST_ATTACH_PHOTO_ID);
       }
 
       // * 해당 리뷰로 적립된 포인트 정보가 있는지 체크
-      const reviewPointDtlList = await this.reviewPointDtlEntity.find({
-        where: { reviewId: review.reviewId },
-      });
+      const reviewPointDtlList = await this.getReviewPointDtlByReviewId(
+        { reviewId: review.reviewId },
+        manager,
+      );
       if (reviewPointDtlList.length > 0) {
         throw new BadRequestException(ERR_MSG.ALREADY_CREATED_REVIEW_POINT_DTL);
       }
     } else if (review.action === 'MOD' || review.action === 'DELETE') {
       // * 리뷰가 존재하는지 체크, 삭제된 리뷰인지 체크, 유저 정보와 장소 정보 체크
-      const reviewInfo = await this.reviewEntity.findOne({ where: { reviewId: review.reviewId } });
+      const reviewInfo = await this.getReviewByReviewId({ reviewId: review.reviewId }, manager);
       if (!reviewInfo) {
         throw new BadRequestException(ERR_MSG.NOT_FOUND_REVIEW);
       }
@@ -452,19 +394,226 @@ export class ReviewService {
         throw new BadRequestException(ERR_MSG.WRONG_PLACE_ID);
       }
 
-      if (review.action === 'MOD') {
+      const reviewPointMst = await this.getReviewPointMstByUserId(
+        { userId: review.userId },
+        manager,
+      );
+      if (!reviewPointMst) {
+        throw new BadRequestException(ERR_MSG.NOT_FOUND_REVIEW_POINT_MST);
+      }
+
+      if (review.action === 'MOD' && review.attachedPhotoIds.length > 0) {
         // * 삭제된 사진 id에 접근하는 경우
-        const deletedAttachPhotoIds = await this.attachPhotoEntity.find({
-          where: {
-            isDel: true,
+        const deletedAttachPhotoData = review.attachedPhotoIds.map((attachPhotoId) => {
+          return {
+            attachPhotoId,
             reviewId: review.reviewId,
-            attachPhotoId: In(review.attachedPhotoIds),
-          },
+          };
         });
+        const deletedAttachPhotoIds = await this.getDeletedAttachPhotoListByAttachPhotoIdList(
+          deletedAttachPhotoData,
+          manager,
+        );
         if (deletedAttachPhotoIds.length > 0) {
           throw new BadRequestException(ERR_MSG.ALREADY_DELETED_ATTACH_PHOTO_ID);
         }
       }
     }
+  }
+
+  // * user data method
+  private async getUserByUserId(
+    data: Pick<UserInterface, 'userId'>,
+    manager: EntityManager,
+  ): Promise<UserEntity> {
+    return await manager.findOne(UserEntity, { where: data });
+  }
+
+  // * place data method
+  private async getPlaceByPlaceId(
+    data: Pick<PlaceEntity, 'placeId'>,
+    manager: EntityManager,
+  ): Promise<PlaceEntity> {
+    return await manager.findOne(PlaceEntity, { where: data });
+  }
+
+  // * review data method
+  private async getReviewByReviewId(
+    data: Pick<ReviewEntity, 'reviewId'>,
+    manager: EntityManager,
+  ): Promise<ReviewEntity> {
+    return await manager.findOne(ReviewEntity, { where: data });
+  }
+  private async getReviewByUserIdAndPlaceId(
+    data: Pick<ReviewInterface, 'userId' | 'placeId' | 'isDel'>,
+    manager: EntityManager,
+  ): Promise<ReviewEntity> {
+    return await manager.findOne(ReviewEntity, {
+      where: data,
+    });
+  }
+  private async getReviewWithAttachPhotoListByReviewId(
+    data: Pick<ReviewInterface, 'reviewId'>,
+    manager: EntityManager,
+  ): Promise<ReviewEntity> {
+    return await manager.findOne(ReviewEntity, {
+      where: data,
+      relations: ['attachPhotoList'],
+    });
+  }
+
+  private async getReviewWithAttachPhotoListAndReviewPointDtlListByReviewId(
+    data: Pick<ReviewInterface, 'reviewId'>,
+    manager: EntityManager,
+  ): Promise<ReviewEntity> {
+    return await manager.findOne(ReviewEntity, {
+      where: data,
+      relations: ['attachPhotoList', 'reviewPointDtlList'],
+    });
+  }
+
+  private async createReview(
+    data: Pick<ReviewInterface, 'reviewId' | 'userId' | 'placeId' | 'content'>,
+    manager: EntityManager,
+  ): Promise<void> {
+    await manager.createQueryBuilder().insert().into(ReviewEntity).values(data).execute();
+  }
+
+  private async getPlaceReviewCntExcludeSelfByPlaceId(
+    data: Pick<ReviewInterface, 'placeId' | 'isDel' | 'reviewId'>,
+    manager: EntityManager,
+  ): Promise<number> {
+    return await manager
+      .createQueryBuilder(ReviewEntity, 'review')
+      .where('review.placeId = :placeId', { placeId: data.placeId })
+      .andWhere('review.isDel = :isDel', { isDel: data.isDel })
+      .andWhere('review.reviewId != :reviewId', { reviewId: data.reviewId })
+      .setLock('pessimistic_write')
+      .getCount();
+  }
+
+  private async updateReviewContent(
+    data: Pick<ReviewInterface, 'reviewId' | 'content'>,
+    manager,
+  ): Promise<void> {
+    await manager
+      .createQueryBuilder()
+      .update(ReviewEntity)
+      .set({ content: data.content })
+      .where('reviewId = :reviewId', { reviewId: data.reviewId })
+      .execute();
+  }
+
+  private async upDeleteReview(data: Pick<ReviewInterface, 'reviewId'>, manager): Promise<void> {
+    await manager
+      .createQueryBuilder()
+      .update(ReviewEntity)
+      .set({ isDel: true })
+      .where('reviewId = :reviewId', { reviewId: data.reviewId })
+      .execute();
+  }
+
+  // * attach photo method
+  private async getAttachPhotoListByAttachPhotoIdList(
+    data: Pick<AttachPhotoInterface, 'attachPhotoId'>[],
+    manager: EntityManager,
+  ): Promise<AttachPhotoEntity[]> {
+    const attachPhotoIdList = data.map((el) => el.attachPhotoId);
+
+    return await manager.find(AttachPhotoEntity, {
+      where: { attachPhotoId: In(attachPhotoIdList) },
+    });
+  }
+
+  private async getDeletedAttachPhotoListByAttachPhotoIdList(
+    data: Pick<AttachPhotoInterface, 'reviewId' | 'attachPhotoId'>[],
+    manager: EntityManager,
+  ): Promise<AttachPhotoEntity[]> {
+    const attachPhotoIdList = data.map((el) => el.attachPhotoId);
+
+    return await manager.find(AttachPhotoEntity, {
+      where: { reviewId: data[0].reviewId, attachPhotoId: In(attachPhotoIdList), isDel: true },
+    });
+  }
+  private async createAttachPhoto(
+    data: Pick<AttachPhotoInterface, 'attachPhotoId' | 'reviewId'>[],
+    manager: EntityManager,
+  ): Promise<void> {
+    await manager.createQueryBuilder().insert().into(AttachPhotoEntity).values(data).execute();
+  }
+
+  private async upDeleteAttachPhoto(
+    data: Pick<AttachPhotoInterface, 'attachPhotoId'>[],
+    manager: EntityManager,
+  ): Promise<void> {
+    const attachPhotoIdList = data.map((el) => el.attachPhotoId);
+    await manager
+      .createQueryBuilder()
+      .update(AttachPhotoEntity)
+      .set({ isDel: true })
+      .where('attachPhotoId IN (:attachPhotoIdList)', { attachPhotoIdList })
+      .execute();
+  }
+
+  // * point method
+  private async getReviewPointMstByUserId(
+    data: Pick<ReviewPointMstInterface, 'userId'>,
+    manager: EntityManager,
+  ): Promise<ReviewPointMstEntity> {
+    return await manager.findOne(ReviewPointMstEntity, { where: data });
+  }
+
+  private async getReviewPointDtlByReviewId(
+    data: Pick<ReviewPointDtlInterface, 'reviewId'>,
+    manager: EntityManager,
+  ): Promise<ReviewPointDtlEntity[]> {
+    return await manager.find(ReviewPointDtlEntity, { where: data });
+  }
+
+  private async createReviewPointMst(
+    data: Pick<ReviewPointMstInterface, 'userId'>,
+    manager: EntityManager,
+  ): Promise<ReviewPointMstEntity> {
+    const reviewPointMst = new ReviewPointMstEntity();
+    reviewPointMst.userId = data.userId;
+
+    return await manager.save(reviewPointMst);
+  }
+
+  private async createReviewPointDtl(
+    data: Pick<
+      ReviewPointDtlInterface,
+      'reviewPointMstId' | 'reviewId' | 'pointType' | 'pointAmt'
+    >[],
+    manager: EntityManager,
+  ): Promise<void> {
+    await manager.createQueryBuilder().insert().into(ReviewPointDtlEntity).values(data).execute();
+  }
+
+  private async getReviewPointSum(
+    data: Pick<ReviewPointDtlInterface, 'reviewPointMstId'>,
+    manager,
+  ): Promise<number> {
+    const queryBuilder = await manager
+      .createQueryBuilder(ReviewPointDtlEntity, 'reviewPointDtl')
+      .select('SUM(reviewPointDtl.pointAmt)', 'totalPointAmt')
+      .where('reviewPointDtl.reviewPointMstId = :reviewPointMstId', data)
+      .getRawOne();
+
+    return parseInt(queryBuilder.totalPointAmt);
+  }
+
+  private async updateTotalPointAmt(
+    data: Pick<ReviewPointMstInterface, 'userId' | 'totalPointAmt'>,
+    manager,
+  ): Promise<void> {
+    await manager
+      .createQueryBuilder()
+      .update(ReviewPointMstEntity)
+      .set({
+        totalPointAmt: data.totalPointAmt,
+      })
+      .where('userId = :userId', { userId: data.userId })
+      .execute();
   }
 }

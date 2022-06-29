@@ -1,6 +1,6 @@
-import { PointType } from 'src/common/enum';
-import { PointAmtType } from 'src/common/types';
-import { ReviewEntity } from 'src/review/entities/review.entity';
+import { PointType } from '../../common/enum';
+import { PointAmtType } from '../../common/types';
+import { ReviewEntity } from '../../review/entities/review.entity';
 import {
   Column,
   CreateDateColumn,

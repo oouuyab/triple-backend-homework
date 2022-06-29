@@ -1,6 +1,6 @@
 import { IsEnum, IsString, IsUUID, MaxLength } from 'class-validator';
-import { ActionTypeLikeEnum, EventTypeLikeEnum } from 'src/common/enum';
-import { ActionType, EventType } from 'src/common/types';
+import { ActionTypeLikeEnum, EventTypeLikeEnum } from '../../common/enum';
+import { ActionType, EventType } from '../../common/types';
 import { ReviewReqDtoInterface } from '../interface/review.interface';
 
 export class ReviewReqDto implements ReviewReqDtoInterface {

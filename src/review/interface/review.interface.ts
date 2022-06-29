@@ -1,4 +1,4 @@
-import { ActionType, EventType } from 'src/common/types';
+import { ActionType, EventType } from '../../common/types';
 
 export interface ReviewInterface {
   reviewId: string;

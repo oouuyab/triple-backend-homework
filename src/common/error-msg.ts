@@ -2,6 +2,7 @@ export const ERR_MSG = {
   NOT_FOUND_USER: '[1] 유저를 찾을 수 없습니다.',
   NOT_FOUND_REVIEW: '[2] 리뷰를 찾을 수 없습니다.',
   NOT_FOUND_PLACE: '[3] 등록되지 않은 장소입니다.',
+  NOT_FOUND_REVIEW_POINT_MST: '[4] 리뷰 포인트 정보를 찾을 수 없습니다.',
   ALREADY_WRITE_REVIEW: '[101] 이미 작성하셨습니다.',
   ALREADY_DELETED_REVIEW: '[102] 삭제된 리뷰입니다.',
   ALREADY_EXIST_ATTACH_PHOTO_ID: '[104] 중복된 사진 정보입니다.',

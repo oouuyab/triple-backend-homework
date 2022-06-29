@@ -1,5 +1,5 @@
-import { PointType } from 'src/common/enum';
-import { PointAmtType } from 'src/common/types';
+import { PointType } from '../../common/enum';
+import { PointAmtType } from '../../common/types';
 
 export interface ReviewPointDtlInterface {
   reviewPointDtlId: number;

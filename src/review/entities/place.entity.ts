@@ -1,4 +1,4 @@
-import { ReviewEntity } from 'src/review/entities/review.entity';
+import { ReviewEntity } from '../../review/entities/review.entity';
 import { CreateDateColumn, Entity, OneToMany, PrimaryColumn } from 'typeorm';
 import { PlaceInterface } from '../interface/place.interface';
 

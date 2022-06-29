@@ -1,5 +1,5 @@
-import { ReviewPointMstEntity } from 'src/review/entities/review-point-mst.entity';
-import { ReviewEntity } from 'src/review/entities/review.entity';
+import { ReviewPointMstEntity } from '../../review/entities/review-point-mst.entity';
+import { ReviewEntity } from '../../review/entities/review.entity';
 import { CreateDateColumn, Entity, JoinColumn, OneToMany, OneToOne, PrimaryColumn } from 'typeorm';
 import { UserInterface } from '../interface/user.interface';
 
