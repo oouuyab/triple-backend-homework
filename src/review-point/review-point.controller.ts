@@ -1,12 +1,12 @@
-import { Controller, Get, Query } from '@nestjs/common';
-import { ReviewPointResDto } from './dto/point.dto';
+import { Body, Controller, Get } from '@nestjs/common';
+import { PointReqDto, ReviewPointResDto } from './dto/point.dto';
 import { ReviewPointService } from './review-point.service';
 
 @Controller('/review-point')
 export class ReviewPointController {
   constructor(private readonly reviewPointService: ReviewPointService) {}
   @Get()
-  async getPoint(@Query('user-id') userId: string): Promise<ReviewPointResDto> {
-    return await this.reviewPointService.getPointByUserId(userId);
+  async getPoint(@Body() body: PointReqDto): Promise<ReviewPointResDto> {
+    return await this.reviewPointService.getPointByUserId(body);
   }
 }

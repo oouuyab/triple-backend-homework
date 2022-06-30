@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ERR_MSG } from '../common/error-msg';
 import { Repository } from 'typeorm';
-import { ReviewPointResDto } from './dto/point.dto';
+import { PointReqDto, ReviewPointResDto } from './dto/point.dto';
 import { ReviewPointMstEntity } from './entities/review.point-mst.entity';
 
 @Injectable()
@@ -12,9 +12,11 @@ export class ReviewPointService {
     private reviewPointMstEntity: Repository<ReviewPointMstEntity>,
   ) {}
 
-  async getPointByUserId(userId: string): Promise<ReviewPointResDto> {
+  async getPointByUserId(user: PointReqDto): Promise<ReviewPointResDto> {
     try {
-      const reviewPointMst = await this.reviewPointMstEntity.findOne({ where: { userId } });
+      const reviewPointMst = await this.reviewPointMstEntity.findOne({
+        where: { userId: user.userId },
+      });
 
       return {
         userId: reviewPointMst.userId,
