@@ -90,7 +90,7 @@ export class ReviewService {
       }
 
       const placeReviewCnt = await this.getPlaceReviewCntExcludeSelfByPlaceId(
-        { placeId: review.placeId, isDel: false, reviewId: review.reviewId },
+        { placeId: review.placeId, reviewId: review.reviewId },
         manager,
       );
 
@@ -486,13 +486,13 @@ export class ReviewService {
   }
 
   private async getPlaceReviewCntExcludeSelfByPlaceId(
-    data: Pick<ReviewInterface, 'placeId' | 'isDel' | 'reviewId'>,
+    data: Pick<ReviewInterface, 'placeId' | 'reviewId'>,
     manager: EntityManager,
   ): Promise<number> {
     return await manager
       .createQueryBuilder(ReviewEntity, 'review')
       .where('review.placeId = :placeId', { placeId: data.placeId })
-      .andWhere('review.isDel = :isDel', { isDel: data.isDel })
+      .andWhere('review.isDel = :isDel', { isDel: false })
       .andWhere('review.reviewId != :reviewId', { reviewId: data.reviewId })
       .setLock('pessimistic_write')
       .getCount();
