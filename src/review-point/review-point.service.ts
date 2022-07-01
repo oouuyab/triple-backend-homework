@@ -23,7 +23,6 @@ export class ReviewPointService {
         totalPointAmt: reviewPointMst.totalPointAmt,
       };
     } catch (err) {
-      console.log(err.stack);
       throw new BadRequestException(ERR_MSG.NOT_FOUND_USER);
     }
   }
