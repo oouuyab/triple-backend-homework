@@ -9,7 +9,6 @@ import { AttachPhotoEntity } from './entities/attach-photo.entity';
 import { ReviewPointDtlEntity } from './entities/review-point-dtl.entity';
 import { UserEntity } from './entities/user.entity';
 import { PlaceEntity } from './entities/place.entity';
-import { InjectRepository } from '@nestjs/typeorm';
 import { ReviewPointMstEntity } from './entities/review-point-mst.entity';
 import { ReviewInterface } from './interface/review.interface';
 import { AttachPhotoInterface } from './interface/attach-photo.interface';
@@ -18,21 +17,7 @@ import { UserInterface } from './interface/user.interface';
 
 @Injectable()
 export class ReviewService {
-  constructor(
-    private dataSource: DataSource,
-    @InjectRepository(ReviewEntity)
-    private reviewEntity: Repository<ReviewEntity>,
-    @InjectRepository(AttachPhotoEntity)
-    private attachPhotoEntity: Repository<AttachPhotoEntity>,
-    @InjectRepository(ReviewPointMstEntity)
-    private reviewPointMstEntity: Repository<ReviewPointMstEntity>,
-    @InjectRepository(ReviewPointDtlEntity)
-    private reviewPointDtlEntity: Repository<ReviewPointDtlEntity>,
-    @InjectRepository(UserEntity)
-    private userEntity: Repository<UserEntity>,
-    @InjectRepository(PlaceEntity)
-    private placeEntity: Repository<PlaceEntity>,
-  ) {}
+  constructor(private dataSource: DataSource) {}
 
   async postReview(review: ReviewReqDto): Promise<void> {
     if (review.action === 'ADD') {
@@ -45,295 +30,316 @@ export class ReviewService {
   }
 
   private async addReview(review: ReviewReqDto): Promise<void> {
-    await this.dataSource.transaction(async (manager) => {
-      await this.checkReviewValidation(review, manager);
-      try {
-        const newReviewPointDtl: Pick<
-          ReviewPointDtlInterface,
-          'reviewPointMstId' | 'reviewId' | 'pointType' | 'pointAmt'
-        >[] = [];
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    const manager = queryRunner.manager;
 
-        // * 리뷰 생성
-        await this.createReview(
-          {
+    await this.checkReviewValidation(review, manager);
+
+    try {
+      const newReviewPointDtl: Pick<
+        ReviewPointDtlInterface,
+        'reviewPointMstId' | 'reviewId' | 'pointType' | 'pointAmt'
+      >[] = [];
+
+      // * 리뷰 생성
+      await this.createReview(
+        {
+          reviewId: review.reviewId,
+          userId: review.userId,
+          placeId: review.placeId,
+          content: review.content,
+        },
+        manager,
+      );
+
+      // * 사진 첨부
+      const attachPhotoList = review.attachedPhotoIds.map((attachPhotoId) => {
+        return {
+          attachPhotoId: attachPhotoId,
+          reviewId: review.reviewId,
+        };
+      });
+
+      await this.createAttachPhoto(attachPhotoList, manager);
+
+      // * 리뷰 표인트 조회 및 생성
+      let reviewPointMst = await this.getReviewPointMstByUserId({ userId: review.userId }, manager);
+
+      if (!reviewPointMst) {
+        reviewPointMst = await this.createReviewPointMst({ userId: review.userId }, manager);
+      }
+
+      if (review.content.length > 0) {
+        newReviewPointDtl.push({
+          reviewPointMstId: reviewPointMst.reviewPointMstId,
+          reviewId: review.reviewId,
+          pointType: PointType.TEXT_POINT,
+          pointAmt: 1,
+        });
+      }
+
+      if (review.attachedPhotoIds.length > 0) {
+        newReviewPointDtl.push({
+          reviewPointMstId: reviewPointMst.reviewPointMstId,
+          reviewId: review.reviewId,
+          pointType: PointType.PHOTO_POINT,
+          pointAmt: 1,
+        });
+      }
+
+      const placeReviewCnt = await this.getPlaceReviewCntExcludeSelfByPlaceId(
+        { placeId: review.placeId, isDel: false, reviewId: review.reviewId },
+        manager,
+      );
+
+      if (placeReviewCnt === 0) {
+        newReviewPointDtl.push({
+          reviewPointMstId: reviewPointMst.reviewPointMstId,
+          reviewId: review.reviewId,
+          pointType: PointType.PLACE_FIRST_POINT,
+          pointAmt: 1,
+        });
+      }
+
+      // * 포인트 처리
+      await this.createReviewPointDtl(newReviewPointDtl, manager);
+
+      // * 포인트 조회
+      const reviewPointSum = await this.getReviewPointSum(
+        { reviewPointMstId: reviewPointMst.reviewPointMstId },
+        manager,
+      );
+
+      // * 포인트 업데이트
+      await this.updateTotalPointAmt(
+        { userId: review.userId, totalPointAmt: reviewPointSum },
+        manager,
+      );
+
+      await queryRunner.commitTransaction();
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw new BadRequestException(ERR_MSG.FAIL_ADD_REVIEW);
+    } finally {
+      queryRunner.release();
+    }
+  }
+  private async modReview(review: ReviewReqDto): Promise<void> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    const manager = queryRunner.manager;
+
+    await this.checkReviewValidation(review, manager);
+
+    try {
+      const newReviewPointDtl: Pick<
+        ReviewPointDtlInterface,
+        'reviewPointMstId' | 'reviewId' | 'pointType' | 'pointAmt'
+      >[] = [];
+
+      const beforeReview = await this.getReviewWithAttachPhotoListByReviewId(
+        { reviewId: review.reviewId },
+        manager,
+      );
+
+      const reviewPointMst = await this.getReviewPointMstByUserId(
+        { userId: review.userId },
+        manager,
+      );
+
+      if (beforeReview.content !== review.content) {
+        if (beforeReview.content.length === 0 && review.content.length > 0) {
+          newReviewPointDtl.push({
+            reviewPointMstId: reviewPointMst.reviewPointMstId,
             reviewId: review.reviewId,
-            userId: review.userId,
-            placeId: review.placeId,
-            content: review.content,
-          },
-          manager,
-        );
+            pointType: PointType.TEXT_POINT,
+            pointAmt: 1,
+          });
+        }
 
-        // * 사진 첨부
-        const attachPhotoList = review.attachedPhotoIds.map((attachPhotoId) => {
+        if (beforeReview.content.length !== 0 && review.content.length === 0) {
+          newReviewPointDtl.push({
+            reviewPointMstId: reviewPointMst.reviewPointMstId,
+            reviewId: review.reviewId,
+            pointType: PointType.TEXT_POINT,
+            pointAmt: -1,
+          });
+        }
+      }
+
+      const normalAttachPhotoList = beforeReview.attachPhotoList.filter(
+        (attachPhoto) => attachPhoto.isDel === false,
+      );
+      if (normalAttachPhotoList.length === 0 && review.attachedPhotoIds.length > 0) {
+        newReviewPointDtl.push({
+          reviewPointMstId: reviewPointMst.reviewPointMstId,
+          reviewId: review.reviewId,
+          pointType: PointType.PHOTO_POINT,
+          pointAmt: 1,
+        });
+      }
+
+      if (normalAttachPhotoList.length > 0 && review.attachedPhotoIds.length === 0) {
+        newReviewPointDtl.push({
+          reviewPointMstId: reviewPointMst.reviewPointMstId,
+          reviewId: review.reviewId,
+          pointType: PointType.PHOTO_POINT,
+          pointAmt: -1,
+        });
+      }
+
+      await this.updateReviewContent(
+        { reviewId: review.reviewId, content: review.content },
+        manager,
+      );
+
+      // * attachPhoto 삭제
+      const beforeAttachPhotoIds = beforeReview.attachPhotoList.map(
+        (attachPhotoInfo) => attachPhotoInfo.attachPhotoId,
+      );
+      const deletedAttachPhotoIds = beforeAttachPhotoIds
+        .filter((id) => !review.attachedPhotoIds.includes(id))
+        .map((attachPhotoId) => {
+          return { attachPhotoId };
+        });
+
+      if (deletedAttachPhotoIds.length > 0) {
+        await this.upDeleteAttachPhoto(deletedAttachPhotoIds, manager);
+      }
+
+      // * attachPhoto 추가
+      const newAttachPhotoList = review.attachedPhotoIds
+        .filter((id) => !beforeAttachPhotoIds.includes(id))
+        .map((id) => {
           return {
-            attachPhotoId: attachPhotoId,
+            attachPhotoId: id,
             reviewId: review.reviewId,
           };
         });
 
-        await this.createAttachPhoto(attachPhotoList, manager);
-
-        // * 리뷰 표인트 조회 및 생성
-        let reviewPointMst = await this.getReviewPointMstByUserId(
-          { userId: review.userId },
-          manager,
-        );
-
-        if (!reviewPointMst) {
-          reviewPointMst = await this.createReviewPointMst({ userId: review.userId }, manager);
-        }
-
-        if (review.content.length > 0) {
-          newReviewPointDtl.push({
-            reviewPointMstId: reviewPointMst.reviewPointMstId,
-            reviewId: review.reviewId,
-            pointType: PointType.TEXT_POINT,
-            pointAmt: 1,
-          });
-        }
-
-        if (review.attachedPhotoIds.length > 0) {
-          newReviewPointDtl.push({
-            reviewPointMstId: reviewPointMst.reviewPointMstId,
-            reviewId: review.reviewId,
-            pointType: PointType.PHOTO_POINT,
-            pointAmt: 1,
-          });
-        }
-
-        const placeReviewCnt = await this.getPlaceReviewCntExcludeSelfByPlaceId(
-          { placeId: review.placeId, isDel: false, reviewId: review.reviewId },
-          manager,
-        );
-
-        if (placeReviewCnt === 0) {
-          newReviewPointDtl.push({
-            reviewPointMstId: reviewPointMst.reviewPointMstId,
-            reviewId: review.reviewId,
-            pointType: PointType.PLACE_FIRST_POINT,
-            pointAmt: 1,
-          });
-        }
-
-        // * 포인트 처리
-        await this.createReviewPointDtl(newReviewPointDtl, manager);
-
-        // * 포인트 조회
-        const reviewPointSum = await this.getReviewPointSum(
-          { reviewPointMstId: reviewPointMst.reviewPointMstId },
-          manager,
-        );
-
-        // * 포인트 업데이트
-        await this.updateTotalPointAmt(
-          { userId: review.userId, totalPointAmt: reviewPointSum },
-          manager,
-        );
-      } catch (err) {
-        console.log(err.stack);
-        throw new BadRequestException(ERR_MSG.FAIL_ADD_REVIEW);
+      if (newAttachPhotoList.length > 0) {
+        await this.createAttachPhoto(newAttachPhotoList, manager);
       }
-    });
-  }
-  private async modReview(review: ReviewReqDto): Promise<void> {
-    await this.dataSource.transaction(async (manager) => {
-      await this.checkReviewValidation(review, manager);
-      try {
-        const newReviewPointDtl: Pick<
-          ReviewPointDtlInterface,
-          'reviewPointMstId' | 'reviewId' | 'pointType' | 'pointAmt'
-        >[] = [];
 
-        const beforeReview = await this.getReviewWithAttachPhotoListByReviewId(
-          { reviewId: review.reviewId },
-          manager,
-        );
+      // * 포인트 처리
+      await this.createReviewPointDtl(newReviewPointDtl, manager);
 
-        const reviewPointMst = await this.getReviewPointMstByUserId(
-          { userId: review.userId },
-          manager,
-        );
+      // * 포인트 조회
+      const reviewPointSum = await this.getReviewPointSum(
+        { reviewPointMstId: reviewPointMst.reviewPointMstId },
+        manager,
+      );
 
-        if (beforeReview.content !== review.content) {
-          if (beforeReview.content.length === 0 && review.content.length > 0) {
-            newReviewPointDtl.push({
-              reviewPointMstId: reviewPointMst.reviewPointMstId,
-              reviewId: review.reviewId,
-              pointType: PointType.TEXT_POINT,
-              pointAmt: 1,
-            });
-          }
+      // * 포인트 업데이트
+      await this.updateTotalPointAmt(
+        { userId: review.userId, totalPointAmt: reviewPointSum },
+        manager,
+      );
 
-          if (beforeReview.content.length !== 0 && review.content.length === 0) {
-            newReviewPointDtl.push({
-              reviewPointMstId: reviewPointMst.reviewPointMstId,
-              reviewId: review.reviewId,
-              pointType: PointType.TEXT_POINT,
-              pointAmt: -1,
-            });
-          }
-        }
-
-        const normalAttachPhotoList = beforeReview.attachPhotoList.filter(
-          (attachPhoto) => attachPhoto.isDel === false,
-        );
-        if (normalAttachPhotoList.length === 0 && review.attachedPhotoIds.length > 0) {
-          newReviewPointDtl.push({
-            reviewPointMstId: reviewPointMst.reviewPointMstId,
-            reviewId: review.reviewId,
-            pointType: PointType.PHOTO_POINT,
-            pointAmt: 1,
-          });
-        }
-
-        if (normalAttachPhotoList.length > 0 && review.attachedPhotoIds.length === 0) {
-          newReviewPointDtl.push({
-            reviewPointMstId: reviewPointMst.reviewPointMstId,
-            reviewId: review.reviewId,
-            pointType: PointType.PHOTO_POINT,
-            pointAmt: -1,
-          });
-        }
-
-        await this.updateReviewContent(
-          { reviewId: review.reviewId, content: review.content },
-          manager,
-        );
-
-        // * attachPhoto 삭제
-        const beforeAttachPhotoIds = beforeReview.attachPhotoList.map(
-          (attachPhotoInfo) => attachPhotoInfo.attachPhotoId,
-        );
-        const deletedAttachPhotoIds = beforeAttachPhotoIds
-          .filter((id) => !review.attachedPhotoIds.includes(id))
-          .map((attachPhotoId) => {
-            return { attachPhotoId };
-          });
-
-        if (deletedAttachPhotoIds.length > 0) {
-          await this.upDeleteAttachPhoto(deletedAttachPhotoIds, manager);
-        }
-
-        // * attachPhoto 추가
-        const newAttachPhotoList = review.attachedPhotoIds
-          .filter((id) => !beforeAttachPhotoIds.includes(id))
-          .map((id) => {
-            return {
-              attachPhotoId: id,
-              reviewId: review.reviewId,
-            };
-          });
-
-        if (newAttachPhotoList.length > 0) {
-          await this.createAttachPhoto(newAttachPhotoList, manager);
-        }
-
-        // * 포인트 처리
-        await this.createReviewPointDtl(newReviewPointDtl, manager);
-
-        // * 포인트 조회
-        const reviewPointSum = await this.getReviewPointSum(
-          { reviewPointMstId: reviewPointMst.reviewPointMstId },
-          manager,
-        );
-
-        // * 포인트 업데이트
-        await this.updateTotalPointAmt(
-          { userId: review.userId, totalPointAmt: reviewPointSum },
-          manager,
-        );
-      } catch (err) {
-        console.log(err.stack);
-        throw new BadRequestException(ERR_MSG.FAIL_MOD_REVIEW);
-      }
-    });
+      await queryRunner.commitTransaction();
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw new BadRequestException(ERR_MSG.FAIL_MOD_REVIEW);
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   private async deleteReview(review: ReviewReqDto): Promise<void> {
-    await this.dataSource.transaction(async (manager) => {
-      await this.checkReviewValidation(review, manager);
-      try {
-        const newReviewPointDtl: Pick<
-          ReviewPointDtlInterface,
-          'reviewPointMstId' | 'reviewId' | 'pointType' | 'pointAmt'
-        >[] = [];
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    const manager = queryRunner.manager;
 
-        const beforeReview = await this.getReviewWithAttachPhotoListAndReviewPointDtlListByReviewId(
-          { reviewId: review.reviewId },
-          manager,
-        );
+    await this.checkReviewValidation(review, manager);
 
-        const reviewPointMst = await this.getReviewPointMstByUserId(
-          { userId: review.userId },
-          manager,
-        );
+    try {
+      const newReviewPointDtl: Pick<
+        ReviewPointDtlInterface,
+        'reviewPointMstId' | 'reviewId' | 'pointType' | 'pointAmt'
+      >[] = [];
 
-        if (beforeReview.content.length > 0) {
-          newReviewPointDtl.push({
-            reviewPointMstId: reviewPointMst.reviewPointMstId,
-            reviewId: review.reviewId,
-            pointType: PointType.TEXT_POINT,
-            pointAmt: -1,
-          });
-        }
+      const beforeReview = await this.getReviewWithAttachPhotoListAndReviewPointDtlListByReviewId(
+        { reviewId: review.reviewId },
+        manager,
+      );
 
-        const normalAttachPhotoIdList = beforeReview.attachPhotoList
-          .filter((attachPhoto) => attachPhoto.isDel === false)
-          .map((attachPhoto) => {
-            return { attachPhotoId: attachPhoto.attachPhotoId };
-          });
-        if (normalAttachPhotoIdList.length > 0) {
-          newReviewPointDtl.push({
-            reviewPointMstId: reviewPointMst.reviewPointMstId,
-            reviewId: review.reviewId,
-            pointType: PointType.PHOTO_POINT,
-            pointAmt: -1,
-          });
-        }
+      const reviewPointMst = await this.getReviewPointMstByUserId(
+        { userId: review.userId },
+        manager,
+      );
 
-        const firstReviewPointSum = beforeReview.reviewPointDtlList.reduce(
-          (acc, reviewPointDtl) =>
-            reviewPointDtl.pointType === PointType.PLACE_FIRST_POINT
-              ? acc + +reviewPointDtl.pointAmt
-              : acc,
-          0,
-        );
-
-        if (firstReviewPointSum === 1) {
-          newReviewPointDtl.push({
-            reviewPointMstId: reviewPointMst.reviewPointMstId,
-            reviewId: review.reviewId,
-            pointType: PointType.PLACE_FIRST_POINT,
-            pointAmt: -1,
-          });
-        }
-
-        await this.upDeleteReview({ reviewId: review.reviewId }, manager);
-
-        if (normalAttachPhotoIdList.length > 0) {
-          await this.upDeleteAttachPhoto(normalAttachPhotoIdList, manager);
-        }
-
-        // * 포인트 처리
-        await this.createReviewPointDtl(newReviewPointDtl, manager);
-
-        // * 포인트 조회
-        const reviewPointSum = await this.getReviewPointSum(
-          { reviewPointMstId: reviewPointMst.reviewPointMstId },
-          manager,
-        );
-
-        // * 포인트 업데이트
-        await this.updateTotalPointAmt(
-          { userId: review.userId, totalPointAmt: reviewPointSum },
-          manager,
-        );
-      } catch (err) {
-        console.log(err.stack);
-        throw new BadRequestException(ERR_MSG.FAIL_DELETE_REVIEW);
+      if (beforeReview.content.length > 0) {
+        newReviewPointDtl.push({
+          reviewPointMstId: reviewPointMst.reviewPointMstId,
+          reviewId: review.reviewId,
+          pointType: PointType.TEXT_POINT,
+          pointAmt: -1,
+        });
       }
-    });
+
+      const normalAttachPhotoIdList = beforeReview.attachPhotoList
+        .filter((attachPhoto) => attachPhoto.isDel === false)
+        .map((attachPhoto) => {
+          return { attachPhotoId: attachPhoto.attachPhotoId };
+        });
+      if (normalAttachPhotoIdList.length > 0) {
+        newReviewPointDtl.push({
+          reviewPointMstId: reviewPointMst.reviewPointMstId,
+          reviewId: review.reviewId,
+          pointType: PointType.PHOTO_POINT,
+          pointAmt: -1,
+        });
+      }
+
+      const firstReviewPointSum = beforeReview.reviewPointDtlList.reduce(
+        (acc, reviewPointDtl) =>
+          reviewPointDtl.pointType === PointType.PLACE_FIRST_POINT
+            ? acc + +reviewPointDtl.pointAmt
+            : acc,
+        0,
+      );
+
+      if (firstReviewPointSum === 1) {
+        newReviewPointDtl.push({
+          reviewPointMstId: reviewPointMst.reviewPointMstId,
+          reviewId: review.reviewId,
+          pointType: PointType.PLACE_FIRST_POINT,
+          pointAmt: -1,
+        });
+      }
+
+      await this.upDeleteReview({ reviewId: review.reviewId }, manager);
+
+      if (normalAttachPhotoIdList.length > 0) {
+        await this.upDeleteAttachPhoto(normalAttachPhotoIdList, manager);
+      }
+
+      // * 포인트 처리
+      await this.createReviewPointDtl(newReviewPointDtl, manager);
+
+      // * 포인트 조회
+      const reviewPointSum = await this.getReviewPointSum(
+        { reviewPointMstId: reviewPointMst.reviewPointMstId },
+        manager,
+      );
+
+      // * 포인트 업데이트
+      await this.updateTotalPointAmt(
+        { userId: review.userId, totalPointAmt: reviewPointSum },
+        manager,
+      );
+
+      await queryRunner.commitTransaction();
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw new BadRequestException(ERR_MSG.FAIL_DELETE_REVIEW);
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   private async checkReviewValidation(review: ReviewReqDto, manager: EntityManager): Promise<void> {
@@ -345,7 +351,7 @@ export class ReviewService {
     if (review.action === 'ADD') {
       // * 이미 작성한 리뷰가 있는지 체크
       const reviewInfo = await this.getReviewByUserIdAndPlaceId(
-        { userId: review.userId, placeId: review.placeId, isDel: false },
+        { userId: review.userId, placeId: review.placeId },
         manager,
       );
       if (reviewInfo) {
@@ -445,11 +451,11 @@ export class ReviewService {
     return await manager.findOne(ReviewEntity, { where: data });
   }
   private async getReviewByUserIdAndPlaceId(
-    data: Pick<ReviewInterface, 'userId' | 'placeId' | 'isDel'>,
+    data: Pick<ReviewInterface, 'userId' | 'placeId'>,
     manager: EntityManager,
   ): Promise<ReviewEntity> {
     return await manager.findOne(ReviewEntity, {
-      where: data,
+      where: { ...data, isDel: false },
     });
   }
   private async getReviewWithAttachPhotoListByReviewId(
