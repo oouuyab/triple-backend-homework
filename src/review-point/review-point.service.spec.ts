@@ -2,9 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ERR_MSG } from '../common/error-msg';
-import { ReviewPointDtlEntity } from './entities/review-point-dtl.entity';
-import { ReviewPointMstEntity } from './entities/review.point-mst.entity';
-import { UserEntity } from './entities/user.entity';
+import { ReviewPointMstEntity } from './entities/review-point-mst.entity';
 import { ReviewPointService } from './review-point.service';
 
 describe('ReviewPointService', () => {
