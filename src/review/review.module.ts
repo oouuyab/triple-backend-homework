@@ -4,7 +4,7 @@ import { PlaceEntity } from '../review/entities/place.entity';
 import { ReviewPointDtlEntity } from '../review/entities/review-point-dtl.entity';
 import { ReviewPointMstEntity } from '../review/entities/review-point-mst.entity';
 import { UserEntity } from '../review/entities/user.entity';
-import { AttachPhotoEntity } from './entities/attach-photo.entity';
+import { AttachedPhotoEntity } from './entities/attached-photo.entity';
 import { ReviewEntity } from './entities/review.entity';
 import { ReviewController } from './review.controller';
 import { ReviewService } from './review.service';
@@ -17,7 +17,7 @@ import { ReviewService } from './review.service';
       UserEntity,
       PlaceEntity,
       ReviewEntity,
-      AttachPhotoEntity,
+      AttachedPhotoEntity,
       ReviewPointMstEntity,
       ReviewPointDtlEntity,
     ]),

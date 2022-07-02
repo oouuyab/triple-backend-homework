@@ -7,13 +7,13 @@ import {
   PrimaryColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { AttachPhotoInterface } from '../interface/attach-photo.interface';
+import { AttachedPhotoInterface } from '../interface/attached-photo.interface';
 import { ReviewEntity } from './review.entity';
 
-@Entity('tb_attach_photo')
-export class AttachPhotoEntity implements AttachPhotoInterface {
-  @PrimaryColumn({ name: 'attach_photo_id' })
-  attachPhotoId: string;
+@Entity('tb_attached_photo')
+export class AttachedPhotoEntity implements AttachedPhotoInterface {
+  @PrimaryColumn({ name: 'attached_photo_id' })
+  attachedPhotoId: string;
 
   @Column({ name: 'review_id' })
   reviewId: string;
@@ -27,7 +27,7 @@ export class AttachPhotoEntity implements AttachPhotoInterface {
   @CreateDateColumn({ name: 'reg_date' })
   regDate: Date;
 
-  @ManyToOne((type) => ReviewEntity, (_) => _.attachPhotoList)
+  @ManyToOne((type) => ReviewEntity, (_) => _.attachedPhotoList)
   @JoinColumn({ name: 'review_id' })
   review: ReviewEntity;
 }

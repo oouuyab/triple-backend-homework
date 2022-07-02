@@ -1,5 +1,5 @@
-export interface AttachPhotoInterface {
-  attachPhotoId: string;
+export interface AttachedPhotoInterface {
+  attachedPhotoId: string;
   reviewId: string;
   isDel: boolean;
   updateDate: Date;

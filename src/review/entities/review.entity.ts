@@ -9,7 +9,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { ReviewInterface } from '../interface/review.interface';
-import { AttachPhotoEntity } from './attach-photo.entity';
+import { AttachedPhotoEntity } from './attached-photo.entity';
 import { PlaceEntity } from './place.entity';
 import { ReviewPointDtlEntity } from './review-point-dtl.entity';
 import { UserEntity } from './user.entity';
@@ -37,8 +37,8 @@ export class ReviewEntity implements ReviewInterface {
   @CreateDateColumn({ name: 'reg_date' })
   regDate: Date;
 
-  @OneToMany((type) => AttachPhotoEntity, (_) => _.review)
-  attachPhotoList: AttachPhotoEntity[];
+  @OneToMany((type) => AttachedPhotoEntity, (_) => _.review)
+  attachedPhotoList: AttachedPhotoEntity[];
 
   @OneToMany((type) => ReviewPointDtlEntity, (_) => _.review)
   reviewPointDtlList: ReviewPointDtlEntity[];

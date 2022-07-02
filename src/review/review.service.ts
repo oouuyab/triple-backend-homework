@@ -5,13 +5,13 @@ import { ERR_MSG } from '../common/error-msg';
 import { ReviewPointDtlInterface } from '../review/interface/review-point-dtl.interface';
 import { PointType } from '../common/enum';
 import { ReviewEntity } from './entities/review.entity';
-import { AttachPhotoEntity } from './entities/attach-photo.entity';
+import { AttachedPhotoEntity } from './entities/attached-photo.entity';
 import { ReviewPointDtlEntity } from './entities/review-point-dtl.entity';
 import { UserEntity } from './entities/user.entity';
 import { PlaceEntity } from './entities/place.entity';
 import { ReviewPointMstEntity } from './entities/review-point-mst.entity';
 import { ReviewInterface } from './interface/review.interface';
-import { AttachPhotoInterface } from './interface/attach-photo.interface';
+import { AttachedPhotoInterface } from './interface/attached-photo.interface';
 import { ReviewPointMstInterface } from './interface/review-point-mst.interface';
 import { UserInterface } from './interface/user.interface';
 
@@ -55,14 +55,14 @@ export class ReviewService {
       );
 
       // * 사진 첨부
-      const attachPhotoList = review.attachedPhotoIds.map((attachPhotoId) => {
+      const attachedPhotoList = review.attachedPhotoIds.map((attachedPhotoId) => {
         return {
-          attachPhotoId: attachPhotoId,
+          attachedPhotoId: attachedPhotoId,
           reviewId: review.reviewId,
         };
       });
 
-      await this.createAttachPhoto(attachPhotoList, manager);
+      await this.createAttachedPhoto(attachedPhotoList, manager);
 
       // * 리뷰 표인트 조회 및 생성
       let reviewPointMst = await this.getReviewPointMstByUserId({ userId: review.userId }, manager);
@@ -140,7 +140,7 @@ export class ReviewService {
         'reviewPointMstId' | 'reviewId' | 'pointType' | 'pointAmt'
       >[] = [];
 
-      const beforeReview = await this.getReviewWithAttachPhotoListByReviewId(
+      const beforeReview = await this.getReviewWithAttachedPhotoListByReviewId(
         { reviewId: review.reviewId },
         manager,
       );
@@ -170,10 +170,10 @@ export class ReviewService {
         }
       }
 
-      const normalAttachPhotoList = beforeReview.attachPhotoList.filter(
-        (attachPhoto) => attachPhoto.isDel === false,
+      const normalAttachedPhotoList = beforeReview.attachedPhotoList.filter(
+        (attachedPhoto) => attachedPhoto.isDel === false,
       );
-      if (normalAttachPhotoList.length === 0 && review.attachedPhotoIds.length > 0) {
+      if (normalAttachedPhotoList.length === 0 && review.attachedPhotoIds.length > 0) {
         newReviewPointDtl.push({
           reviewPointMstId: reviewPointMst.reviewPointMstId,
           reviewId: review.reviewId,
@@ -182,7 +182,7 @@ export class ReviewService {
         });
       }
 
-      if (normalAttachPhotoList.length > 0 && review.attachedPhotoIds.length === 0) {
+      if (normalAttachedPhotoList.length > 0 && review.attachedPhotoIds.length === 0) {
         newReviewPointDtl.push({
           reviewPointMstId: reviewPointMst.reviewPointMstId,
           reviewId: review.reviewId,
@@ -196,32 +196,32 @@ export class ReviewService {
         manager,
       );
 
-      // * attachPhoto 삭제
-      const beforeAttachPhotoIds = beforeReview.attachPhotoList.map(
-        (attachPhotoInfo) => attachPhotoInfo.attachPhotoId,
+      // * attachedPhoto 삭제
+      const beforeAttachedPhotoIds = beforeReview.attachedPhotoList.map(
+        (attachedPhotoInfo) => attachedPhotoInfo.attachedPhotoId,
       );
-      const deletedAttachPhotoIds = beforeAttachPhotoIds
+      const deletedAttachedPhotoIds = beforeAttachedPhotoIds
         .filter((id) => !review.attachedPhotoIds.includes(id))
-        .map((attachPhotoId) => {
-          return { attachPhotoId };
+        .map((attachedPhotoId) => {
+          return { attachedPhotoId };
         });
 
-      if (deletedAttachPhotoIds.length > 0) {
-        await this.upDeleteAttachPhoto(deletedAttachPhotoIds, manager);
+      if (deletedAttachedPhotoIds.length > 0) {
+        await this.upDeleteAttachedPhoto(deletedAttachedPhotoIds, manager);
       }
 
-      // * attachPhoto 추가
-      const newAttachPhotoList = review.attachedPhotoIds
-        .filter((id) => !beforeAttachPhotoIds.includes(id))
+      // * attachedPhoto 추가
+      const newAttachedPhotoList = review.attachedPhotoIds
+        .filter((id) => !beforeAttachedPhotoIds.includes(id))
         .map((id) => {
           return {
-            attachPhotoId: id,
+            attachedPhotoId: id,
             reviewId: review.reviewId,
           };
         });
 
-      if (newAttachPhotoList.length > 0) {
-        await this.createAttachPhoto(newAttachPhotoList, manager);
+      if (newAttachedPhotoList.length > 0) {
+        await this.createAttachedPhoto(newAttachedPhotoList, manager);
       }
 
       // * 포인트 처리
@@ -262,7 +262,7 @@ export class ReviewService {
         'reviewPointMstId' | 'reviewId' | 'pointType' | 'pointAmt'
       >[] = [];
 
-      const beforeReview = await this.getReviewWithAttachPhotoListAndReviewPointDtlListByReviewId(
+      const beforeReview = await this.getReviewWithAttachedPhotoListAndReviewPointDtlListByReviewId(
         { reviewId: review.reviewId },
         manager,
       );
@@ -281,12 +281,12 @@ export class ReviewService {
         });
       }
 
-      const normalAttachPhotoIdList = beforeReview.attachPhotoList
-        .filter((attachPhoto) => attachPhoto.isDel === false)
-        .map((attachPhoto) => {
-          return { attachPhotoId: attachPhoto.attachPhotoId };
+      const normalAttachedPhotoIdList = beforeReview.attachedPhotoList
+        .filter((attachedPhoto) => attachedPhoto.isDel === false)
+        .map((attachedPhoto) => {
+          return { attachedPhotoId: attachedPhoto.attachedPhotoId };
         });
-      if (normalAttachPhotoIdList.length > 0) {
+      if (normalAttachedPhotoIdList.length > 0) {
         newReviewPointDtl.push({
           reviewPointMstId: reviewPointMst.reviewPointMstId,
           reviewId: review.reviewId,
@@ -314,8 +314,8 @@ export class ReviewService {
 
       await this.upDeleteReview({ reviewId: review.reviewId }, manager);
 
-      if (normalAttachPhotoIdList.length > 0) {
-        await this.upDeleteAttachPhoto(normalAttachPhotoIdList, manager);
+      if (normalAttachedPhotoIdList.length > 0) {
+        await this.upDeleteAttachedPhoto(normalAttachedPhotoIdList, manager);
       }
 
       // * 포인트 처리
@@ -365,15 +365,17 @@ export class ReviewService {
       }
 
       // * 사진 id가 중복되는지 체크
-      const attachPhotoData = review.attachedPhotoIds.map((attachPhotoId) => {
-        return { attachPhotoId };
-      });
-      const attachPhotoList = await this.getAttachPhotoListByAttachPhotoIdList(
-        attachPhotoData,
-        manager,
-      );
-      if (attachPhotoList.length > 0) {
-        throw new BadRequestException(ERR_MSG.ALREADY_EXIST_ATTACH_PHOTO_ID);
+      if (review.attachedPhotoIds?.length > 0) {
+        const attachedPhotoData = review.attachedPhotoIds.map((attachedPhotoId) => {
+          return { attachedPhotoId };
+        });
+        const attachedPhotoList = await this.getAttachedPhotoListByAttachedPhotoIdList(
+          attachedPhotoData,
+          manager,
+        );
+        if (attachedPhotoList.length > 0) {
+          throw new BadRequestException(ERR_MSG.ALREADY_EXIST_ATTACHED_PHOTO_ID);
+        }
       }
 
       // * 해당 리뷰로 적립된 포인트 정보가 있는지 체크
@@ -410,18 +412,18 @@ export class ReviewService {
 
       if (review.action === 'MOD' && review.attachedPhotoIds.length > 0) {
         // * 삭제된 사진 id에 접근하는 경우
-        const deletedAttachPhotoData = review.attachedPhotoIds.map((attachPhotoId) => {
+        const deletedAttachedPhotoData = review.attachedPhotoIds.map((attachedPhotoId) => {
           return {
-            attachPhotoId,
+            attachedPhotoId,
             reviewId: review.reviewId,
           };
         });
-        const deletedAttachPhotoIds = await this.getDeletedAttachPhotoListByAttachPhotoIdList(
-          deletedAttachPhotoData,
+        const deletedAttachedPhotoIds = await this.getDeletedAttachedPhotoListByAttachedPhotoIdList(
+          deletedAttachedPhotoData,
           manager,
         );
-        if (deletedAttachPhotoIds.length > 0) {
-          throw new BadRequestException(ERR_MSG.ALREADY_DELETED_ATTACH_PHOTO_ID);
+        if (deletedAttachedPhotoIds.length > 0) {
+          throw new BadRequestException(ERR_MSG.ALREADY_DELETED_ATTACHED_PHOTO_ID);
         }
       }
     }
@@ -458,23 +460,23 @@ export class ReviewService {
       where: { ...data, isDel: false },
     });
   }
-  private async getReviewWithAttachPhotoListByReviewId(
+  private async getReviewWithAttachedPhotoListByReviewId(
     data: Pick<ReviewInterface, 'reviewId'>,
     manager: EntityManager,
   ): Promise<ReviewEntity> {
     return await manager.findOne(ReviewEntity, {
       where: data,
-      relations: ['attachPhotoList'],
+      relations: ['attachedPhotoList'],
     });
   }
 
-  private async getReviewWithAttachPhotoListAndReviewPointDtlListByReviewId(
+  private async getReviewWithAttachedPhotoListAndReviewPointDtlListByReviewId(
     data: Pick<ReviewInterface, 'reviewId'>,
     manager: EntityManager,
   ): Promise<ReviewEntity> {
     return await manager.findOne(ReviewEntity, {
       where: data,
-      relations: ['attachPhotoList', 'reviewPointDtlList'],
+      relations: ['attachedPhotoList', 'reviewPointDtlList'],
     });
   }
 
@@ -520,44 +522,44 @@ export class ReviewService {
   }
 
   // * attach photo method
-  private async getAttachPhotoListByAttachPhotoIdList(
-    data: Pick<AttachPhotoInterface, 'attachPhotoId'>[],
+  private async getAttachedPhotoListByAttachedPhotoIdList(
+    data: Pick<AttachedPhotoInterface, 'attachedPhotoId'>[],
     manager: EntityManager,
-  ): Promise<AttachPhotoEntity[]> {
-    const attachPhotoIdList = data.map((el) => el.attachPhotoId);
+  ): Promise<AttachedPhotoEntity[]> {
+    const attachedPhotoIdList = data.map((el) => el.attachedPhotoId);
 
-    return await manager.find(AttachPhotoEntity, {
-      where: { attachPhotoId: In(attachPhotoIdList) },
+    return await manager.find(AttachedPhotoEntity, {
+      where: { attachedPhotoId: In(attachedPhotoIdList) },
     });
   }
 
-  private async getDeletedAttachPhotoListByAttachPhotoIdList(
-    data: Pick<AttachPhotoInterface, 'reviewId' | 'attachPhotoId'>[],
+  private async getDeletedAttachedPhotoListByAttachedPhotoIdList(
+    data: Pick<AttachedPhotoInterface, 'reviewId' | 'attachedPhotoId'>[],
     manager: EntityManager,
-  ): Promise<AttachPhotoEntity[]> {
-    const attachPhotoIdList = data.map((el) => el.attachPhotoId);
+  ): Promise<AttachedPhotoEntity[]> {
+    const attachedPhotoIdList = data.map((el) => el.attachedPhotoId);
 
-    return await manager.find(AttachPhotoEntity, {
-      where: { reviewId: data[0].reviewId, attachPhotoId: In(attachPhotoIdList), isDel: true },
+    return await manager.find(AttachedPhotoEntity, {
+      where: { reviewId: data[0].reviewId, attachedPhotoId: In(attachedPhotoIdList), isDel: true },
     });
   }
-  private async createAttachPhoto(
-    data: Pick<AttachPhotoInterface, 'attachPhotoId' | 'reviewId'>[],
+  private async createAttachedPhoto(
+    data: Pick<AttachedPhotoInterface, 'attachedPhotoId' | 'reviewId'>[],
     manager: EntityManager,
   ): Promise<void> {
-    await manager.createQueryBuilder().insert().into(AttachPhotoEntity).values(data).execute();
+    await manager.createQueryBuilder().insert().into(AttachedPhotoEntity).values(data).execute();
   }
 
-  private async upDeleteAttachPhoto(
-    data: Pick<AttachPhotoInterface, 'attachPhotoId'>[],
+  private async upDeleteAttachedPhoto(
+    data: Pick<AttachedPhotoInterface, 'attachedPhotoId'>[],
     manager: EntityManager,
   ): Promise<void> {
-    const attachPhotoIdList = data.map((el) => el.attachPhotoId);
+    const attachedPhotoIdList = data.map((el) => el.attachedPhotoId);
     await manager
       .createQueryBuilder()
-      .update(AttachPhotoEntity)
+      .update(AttachedPhotoEntity)
       .set({ isDel: true })
-      .where('attachPhotoId IN (:attachPhotoIdList)', { attachPhotoIdList })
+      .where('attachedPhotoId IN (:attachedPhotoIdList)', { attachedPhotoIdList })
       .execute();
   }
 
