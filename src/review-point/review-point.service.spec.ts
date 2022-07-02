@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ERR_MSG } from '../common/error-msg';
 import { ReviewPointMstEntity } from './entities/review-point-mst.entity';
+import { UserEntity } from './entities/user.entity';
 import { ReviewPointService } from './review-point.service';
 
 describe('ReviewPointService', () => {
@@ -20,6 +21,19 @@ describe('ReviewPointService', () => {
     }),
   };
 
+  const mockUserRepository = {
+    findOne: jest.fn().mockImplementation(async (option) => {
+      if (option.where.userId === '3ede0ef2-92b7-4817-a5f3-0c575361f745') {
+        return {
+          userId: option.where.userId,
+          regDate: new Date(),
+        };
+      } else {
+        throw new BadRequestException(ERR_MSG.NOT_FOUND_USER);
+      }
+    }),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -27,6 +41,10 @@ describe('ReviewPointService', () => {
         {
           provide: getRepositoryToken(ReviewPointMstEntity),
           useValue: mockReviewPointMstRepository,
+        },
+        {
+          provide: getRepositoryToken(UserEntity),
+          useValue: mockUserRepository,
         },
       ],
     }).compile();
