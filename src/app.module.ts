@@ -2,15 +2,12 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ReviewModule } from './review/review.module';
-import { ReviewPointController } from './review-point/review-point.controller';
-import { ReviewPointService } from './review-point/review-point.service';
 import { ReviewPointModule } from './review-point/review-point.module';
-import { DataSource } from 'typeorm';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
-      envFilePath: process.env.NODE_ENV === 'prod' ? '.env.prod' : '.env',
+      envFilePath: process.env.NODE_ENV === 'test' ? '.env.test' : '.env',
     }),
     ReviewModule,
     ReviewPointModule,
@@ -23,6 +20,7 @@ import { DataSource } from 'typeorm';
       database: process.env.DB_DATABASE,
       entities: [__dirname + '/**/*.entity{.ts,.js}'],
       logging: process.env.DB_LOGGING === 'true',
+      synchronize: process.env.NODE_ENV === 'test ',
     }),
   ],
   controllers: [],
