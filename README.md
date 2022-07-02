@@ -1,11 +1,99 @@
-# Triple Backend Homework
+# [트리플여행자 마일리지 서비스]
+
+## 설정 방법
+
+### DB 설정 (택 1)
+
+- 도커를 사용해서 DB 설정
+
+```bash
+# 도커를 설치주세요.
+
+# docker 컨테이너 실행
+$ docker run --name triple_db \
+-v `pwd`/mysql/triple_db.sql:/root/triple_db.sql \
+-v `pwd`/mysql/triple_test_db.sql:/root/triple_test_db.sql \
+-e MYSQL_ROOT_PASSWORD=PASSWORD \
+-p 3306:3306 -d mysql:8.0
+
+# linux/amd64인 경우
+$ docker run --platform linux/amd64 --name triple_db \
+-v `pwd`/mysql/triple_db.sql:/root/triple_db.sql \
+-v `pwd`/mysql/triple_test_db.sql:/root/triple_test_db.sql \
+-e MYSQL_ROOT_PASSWORD=PASSWORD \
+-p 3306:3306 -d mysql:8.0
+
+# container id 확인 및 ssh 접속
+$ docker ps -a
+$ docker exec -it [ContainerId] bash
+
+# 최초 실행 시 실행해주세요 (도커 컨테이너에 ssh로 접속)
+container$ mysql -uroot -p
+mysql) create database triple_db;
+mysql) create database triple_test_db;
+mysql) quit;
+
+container$ cd /root
+container$ mysql -uroot -p triple_db < ./triple_db.sql
+container$ mysql -uroot -p triple_test_db < ./triple_test_db.sql
+container$ exit
+
+# my.cnf 설정 (프로젝트 폴더에서)
+$ docker container cp ./mysql/my.cnf [ContainerId]:/etc/mysql/my.cnf
+
+# 컨테이너 재실행
+$ docker restart [ContainerId]
+```
+
+- 로컬에서 MySQL로 설정
+
+```bash
+# MySQL 8 버전을 설치해주세요
+$ mysql -uroot -p password
+
+mysql> create database triple_db;
+mysql> create database triple_test_db;
+mysql> quit;
+
+# 프로젝트의 mysql/dump 파일을 사용해 덤프
+$ mysql -uroot -p password triple_db < ./mysql/dump/triple_db.sql
+$ mysql -uroot -p password triple_test_db < ./mysql/dump/triple_test_db.sql
+
+
+# my.cnf 설정
+# my.cnf에  sql_mode="NO_ZERO_DATE" 설정
+# my.cnf에 default-time-zone='+9:00'설정
+
+# mysql 재실행
+```
+
+### env 설정
+
+```
+# 프로젝트 폴더에 프로덕션에 사용할 env 생성
+DB_HOST=localhost
+DB_USER_NAME=root
+DB_PASSWORD=PASSWORD
+DB_DATABASE=triple_db
+```
+
+```
+# 프로젝트 폴더에 테스트에 사용할 env 생성
+DB_HOST=localhost
+DB_USER_NAME=root
+DB_PASSWORD=triple
+DB_DATABASE=triple_test_db
+```
+
+---
 
 ## 실행 방법
 
 ### Script
 
 ```
-서버 실행 : npm run start
+패키지 설치: npm install
+서버 실행: npm run start
 유닛 테스트 실행: npm run test
 E2E 테스트 실행: npm run test:e2e
 ```
@@ -15,6 +103,7 @@ E2E 테스트 실행: npm run test:e2e
 🔥 **주의사항**
 
 - `reviewId`, `attachedPhotoId`, `userId`, `placeId`는 UUID 포맷입니다.
+- `content`는 최대 500자로 제한했습니다.
 - `user`와 `place`를 생성하는 api는 없기 때문에 db에 생성되어있는 `userId`, `placeId`를 사용해야합니다.
 - 초기 생성되어있는 `userId`와 `placeId`를 사용해주세요!
   ```
@@ -90,6 +179,13 @@ NestJS v8.2.8
 TypeORM v0.3.6
 MySql v8
 ```
+
+---
+
+## Test
+
+- 테스트는 유닛 테스트와 E2E 테스트가 있습니다.
+- 테스트에 사용하는 DB는 `triple_test_db`입니다. (프로덕트 레벨에서 사용하는 DB는 `triple_db`입니다.)
 
 ---
 

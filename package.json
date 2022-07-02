@@ -1,8 +1,8 @@
 {
   "name": "triple-backend-homework",
-  "version": "0.0.1",
-  "description": "",
-  "author": "",
+  "version": "1.0.0",
+  "description": "트리플 여행자 클럽 마일리지 서비스",
+  "author": "oouuyab(oouuyab@gmail.com)",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
