@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { ERR_MSG } from '../common/error-msg';
 import { Repository } from 'typeorm';
 import { ReviewPointResDto } from './dto/point.dto';
-import { ReviewPointMstEntity } from './entities/review.point-mst.entity';
+import { ReviewPointMstEntity } from './entities/review-point-mst.entity';
 
 @Injectable()
 export class ReviewPointService {

@@ -1,6 +1,6 @@
 import { CreateDateColumn, Entity, JoinColumn, OneToMany, OneToOne, PrimaryColumn } from 'typeorm';
 import { UserInterface } from '../interface/user.interface';
-import { ReviewPointMstEntity } from './review.point-mst.entity';
+import { ReviewPointMstEntity } from './review-point-mst.entity';
 
 @Entity('tb_user')
 export class UserEntity implements UserInterface {

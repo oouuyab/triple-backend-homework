@@ -9,7 +9,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { ReviewPointDtlInterface } from '../interface/review-point-dtl.interface';
-import { ReviewPointMstEntity } from './review.point-mst.entity';
+import { ReviewPointMstEntity } from './review-point-mst.entity';
 
 @Entity('tb_review_point_dtl')
 export class ReviewPointDtlEntity implements ReviewPointDtlInterface {
